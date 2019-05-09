@@ -51,9 +51,6 @@ func CreateEmployee(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Internal Server Error")
 		return
 	}
-	me:=http.Client{
-
-	}
 	result, err := employeesStorage.Save(employee)
 	if err != nil {
 		fmt.Println(err)
