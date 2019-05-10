@@ -43,10 +43,9 @@ func main() {
 		FirstName: "Ivan",
 		LastName:  "Smolyakov",
 		Email:     "ghgchth@gmail.com",
-		//	Phone: 123,
+		Phone:     "1213",
 	}
 	bytearr, err := json.Marshal(&Ivan)
-	fmt.Println(string(bytearr))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -54,13 +53,12 @@ func main() {
 	response, err := http.Post("http://localhost:8080/customers/", "application/json", bytes.NewBuffer(bytearr))
 	//GET REQ
 
-	//response, err:=http	.Get("http://localhost:8080/customers/")
-	if err != nil {
-		log.Fatal(err)
-	}
+	//response, err:=http.Get("http://localhost:8080/customers/")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//bytearr,err = ioutil.ReadAll(response.Body)
 	fmt.Println(response)
-	//bytearr,err := ioutil.ReadAll(response.Body)
-	//	fmt.Println(string(bytearr),response.Request,response.StatusCode)
 
 }
 

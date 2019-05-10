@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
+	_"github.com/lib/pq"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -46,9 +46,9 @@ func main() {
 	subrouter.HandleFunc("/", ListOfCustomers).Methods(http.MethodGet)
 	subrouter.HandleFunc("/{id}", RetrieveCustomer).Methods(http.MethodGet)
 
-	/*subrouter.HandleFunc("/{id}", ReplaceCustomer).Methods(http.MethodPut)
+	subrouter.HandleFunc("/{id}", ReplaceCustomer).Methods(http.MethodPut)
 	subrouter.HandleFunc("/{id}", UpdateCustomer).Methods(http.MethodPatch)
-	subrouter.HandleFunc("/{id}", DeleteAccount).Methods(http.MethodDelete)*/
+	subrouter.HandleFunc("/{id}", DeleteCustomer).Methods(http.MethodDelete)
 	http.Handle("/", router)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		panic(err)
@@ -65,6 +65,7 @@ func ConnectToDB() (database *sql.DB) {
 func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
 	defer db.Close()
+	defer r.Body.Close()
 	var customer Customer
 	bytearr, err := ioutil.ReadAll(r.Body)
 	if err = json.Unmarshal(bytearr, &customer); err != nil {
@@ -94,7 +95,6 @@ func RetrieveCustomer(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 	id := mux.Vars(r)["id"]
 	rows, err := db.Query("SELECT * FROM customers WHERE id = $1;", id)
-
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -128,17 +128,96 @@ func ListOfCustomers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for rows.Next() {
-		rows.Scan(&current.ID, &current.FirstName, &current.LastName, &current.Email, &current.Phone)
-		bytearr, err := json.MarshalIndent(&current, "", " ")
+		err = rows.Scan(&current.ID, &current.FirstName, &current.LastName, &current.Email, &current.Phone)
+		customers = append(customers, current)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintln(w, err)
 			return
 		}
-		customers = append(customers, current)
-		w.Write(bytearr)
 	}
 	if len(customers) == 0 {
+		w.WriteHeader(http.StatusNoContent)
 		w.Write([]byte("No customers"))
+		return
 	}
+
+	bytearr, err := json.MarshalIndent(&customers, "", " ")
+	w.Write(bytearr)
+}
+
+func ReplaceCustomer(w http.ResponseWriter, r *http.Request) {
+	db := ConnectToDB()
+	defer db.Close()
+	defer r.Body.Close()
+	var current Customer
+	bytearr, _ := ioutil.ReadAll(r.Body)
+	err := json.Unmarshal(bytearr, &current)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Inсorrect json data"))
+		fmt.Println(err)
+	}
+	id := mux.Vars(r)["id"]
+	_, err = db.Query("UPDATE customers SET "+
+		"first_name=$1,last_name=$2,email=$3,phone=$4 WHERE id=$5;", current.FirstName,
+		current.LastName, current.Email, current.Phone, id)
+	if err != nil {
+		fmt.Println(err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+	fmt.Printf("UPDATED USER with id (%s)", id)
+	fmt.Println()
+}
+func UpdateCustomer(w http.ResponseWriter, r *http.Request) {
+	db := ConnectToDB()
+	defer db.Close()
+	defer r.Body.Close()
+	id := mux.Vars(r)["id"]
+	jsonDict := make(map[string]string)
+	bytearr, _ := ioutil.ReadAll(r.Body)
+	err := json.Unmarshal(bytearr, &jsonDict)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Inсorrect json data"))
+		fmt.Println(err)
+		return
+	}
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for key, val := range jsonDict {
+		result, err := db.Exec(fmt.Sprintf("UPDATE customers SET "+
+			"%s=$1 WHERE id=$2;", key), val, id) //Don't know how to do this other way
+		rowsAffected, _ := result.RowsAffected()
+		if err != nil || rowsAffected != 1 || result == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Cant process your request"))
+			fmt.Println(err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+	fmt.Printf("UPDATED USER with id (%s)", id)
+	fmt.Println()
+}
+func DeleteCustomer(w http.ResponseWriter, r *http.Request) {
+	db := ConnectToDB()
+	defer db.Close()
+	defer r.Body.Close()
+	id := mux.Vars(r)["id"]
+	result, err := db.Exec("DELETE FROM customers WHERE id=$1", id)
+	rowsAffected, _ := result.RowsAffected()
+	if err != nil || rowsAffected != 1 || result == nil {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Println(err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	fmt.Printf("DELETED USER with id (%s)", id)
+	fmt.Println()
+}
+func () {
+
 }
