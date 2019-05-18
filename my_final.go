@@ -6,18 +6,16 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 	"io/ioutil"
 	"log"
 	"net/http"
 )
 
 const (
-	DB_DRIVER  = "postgres"
-	DBUSERNAME = "postgres"
-	PASSWORD   = "1234"
-	DbPort     = "5432"
-	DbName     = "postgres"
-) //Postgres schema
+	CONNSTR   = "host=localhost port=5432 user=postgres password=1234 dbname=postrgres sslmode=disable"
+	DB_DRIVER = "postgres"
+)
 
 type Customer struct {
 	ID        string `json:"id"`
@@ -34,16 +32,17 @@ type Account struct {
 	IsBlocked          bool        `json:"is_blocked"`
 }
 type SendMoneyForm struct {
-	Amount             float64 `json:"amount"`
-	Receiver           string  `json:"receiver"`
+	SendersAccNumber   string  `json:"senders_acc_number"`
 	ReceiversAccNumber string  `json:"receivers_acc_number"`
+	Amount             float64 `json:"amount"`
 }
 
 func main() {
 	router := mux.NewRouter()
 	init := ConnectToDB()
-	defer init.Close() //DROP TABLE FROM PREVIOUS SERVERS LAUNCH
-	_, err := init.Exec("CREATE TABLE IF NOT EXISTS customers(" +
+	defer init.Close() //RESET TABLES AFTER RESETTING SERVER
+	_, err := init.Exec("DROP TABLE IF EXISTS customers CASCADE;" +
+		"CREATE TABLE customers(" +
 		"id VARCHAR(50) NOT NULL PRIMARY KEY," +
 		"first_name VARCHAR(20) NOT NULL," +
 		"last_name VARCHAR(20) NOT NULL," +
@@ -52,42 +51,52 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, err = init.Exec("CREATE TABLE IF NOT EXISTS accounts(" +
+	_, err = init.Exec("DROP TABLE IF EXISTS accounts CASCADE;" +
+		"CREATE TABLE accounts(" +
 		"customer_id VARCHAR(50) NOT NULL," +
 		"account_id VARCHAR(50) NOT NULL PRIMARY KEY," +
 		"total NUMERIC," +
-		"time_of_transactions TIMESTAMP WITH TIME ZONE[]," +
 		"is_blocked BOOLEAN DEFAULT FALSE," +
-		"FOREIGN KEY (customer_id) REFERENCES customers(id));")
+		"FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE);")
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, err = init.Exec("CREATE TABLE IF NOT EXISTS transactions ;")
+	_, err = init.Exec("DROP TABLE IF EXISTS transactions;" +
+		"CREATE TABLE transactions(" +
+		"senders_account_id VARCHAR(50) NOT NULL PRIMARY KEY," +
+		"receivers_account_id VARCHAR(50) NOT NULL PRIMARY KEY," +
+		"amount NUMERIC," +
+		"time_of_transaction TIMESTAMP WITH TIME ZONE," +
+		"FOREIGN KEY (senders_account_id) REFERENCES accounts(account_id)" +
+		"FOREIGN KEY (receivers_account_id) REFERENCES accounts(account_id));")
+	if err != nil {
+		log.Fatal(err)
+	}
 	subrouter := router.PathPrefix("/customers").Subrouter()
-
-	subrouter.HandleFunc("/", CreateCustomer).Methods(http.MethodPost)
-	subrouter.HandleFunc("/", ListOfCustomers).Methods(http.MethodGet)
+	subrouter.HandleFunc("/", CreateCustomer).Methods(http.MethodPost) //I think its i,possible to override
+	//functon in go
+	subrouter.HandleFunc("", ListOfCustomers).Methods(http.MethodGet)
 	subrouter.HandleFunc("/{id}", RetrieveCustomer).Methods(http.MethodGet)
 
 	subrouter.HandleFunc("/{id}", ReplaceCustomer).Methods(http.MethodPut)
 	subrouter.HandleFunc("/{id}", UpdateCustomer).Methods(http.MethodPatch)
 	subrouter.HandleFunc("/{id}", DeleteCustomer).Methods(http.MethodDelete)
 
-	subrouter.HandleFunc("/{id}/", CreateAccount).Methods(http.MethodPost)
+	subrouter.HandleFunc("/{id}/create_acc", CreateAccount).Methods(http.MethodPost)
 	subrouter.HandleFunc("/{id}/{account_id}", DeleteAccount).Methods(http.MethodDelete)
-	subrouter.HandleFunc("/{id}/{account_id}/send", SendMoney).Methods(http.MethodPost)
+	subrouter.HandleFunc("/{id}/send", SendMoney).Methods(http.MethodPost)
 	http.Handle("/", router)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		panic(err)
 	}
 }
 func ConnectToDB() (database *sql.DB) {
-	database, _ = sql.Open(DB_DRIVER, DbName+"://"+DBUSERNAME+":"+PASSWORD+"@localhost:"+DbPort)
-	if err := database.Ping(); err != nil {
+	database, err := sql.Open(DB_DRIVER, CONNSTR)
+	if err = database.Ping(); err != nil {
 		log.Fatal(err)
 		return
 	}
-	return
+	return database
 }
 
 func CheckIfExists(id string) bool {
@@ -97,6 +106,7 @@ func CheckIfExists(id string) bool {
 	if err == sql.ErrNoRows {
 		return false
 	}
+	return true
 }
 
 func CreateCustomer(w http.ResponseWriter, r *http.Request) { //here I leave as it, because
@@ -104,47 +114,68 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) { //here I leave as 
 	db := ConnectToDB()
 	defer db.Close()
 	defer r.Body.Close()
-	var customer Customer
-	bytearr, err := ioutil.ReadAll(r.Body)
-	if err = json.Unmarshal(bytearr, &customer); err != nil {
+	var c Customer
+	byrearr, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = json.Unmarshal(byrearr, &c)
+	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(fmt.Sprintf("Invalid data:%v", err)))
 		return
 	}
-	customer.ID = uuid.New().String()
+	if c.FirstName == "" || c.LastName == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("First name and last name are required"))
+		return
+	}
+	c.ID = uuid.New().String()
 	_, err = db.Query("INSERT INTO customers"+
 		"(id,first_name,last_name,email,phone)"+
 		"VALUES ("+
-		"$1,$2,$3,$4,$5);", customer.ID, customer.FirstName, customer.LastName, customer.Email, customer.Phone)
+		"$1,$2,$3,$4,$5);", &c.ID, &c.FirstName, &c.LastName, &c.Email, &c.Phone)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte(customer.ID))
-	fmt.Printf("CREATED USER with id (%s)", customer.ID)
+	w.Write([]byte(c.ID))
+	fmt.Printf("CREATED USER with id %s", c.ID)
 	fmt.Println()
 	return
 }
 
-func RetrieveCustomer(w http.ResponseWriter, r *http.Request) { //regexp-это регулярное выражение;
+func RetrieveCustomer(w http.ResponseWriter, r *http.Request) { //regexp is regular expression, but
+	//because of uuid we wont use it
 	db := ConnectToDB()
 	defer db.Close()
 	id := mux.Vars(r)["id"]
 	var c Customer
-	err := db.QueryRow("SELECT * FROM customers WHERE id = $1;", id).Scan(&c)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("No such customer"))
+	err := db.QueryRow("SELECT * FROM customers WHERE id = $1;", id).Scan(&c.ID,
+		&c.FirstName, &c.LastName, &c.Email, &c.Phone)
+	switch {
+	case err == sql.ErrNoRows:
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "No customer with id %s", id)
+		return
+	case err != nil:
+		fmt.Println(err)
+		return
+	default:
+		bytearr, err := json.MarshalIndent(&c, "", " ")
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
+		w.Write(bytearr)
+		return
 	}
-	bytearr, err := json.MarshalIndent(&c, "", " ")
-	w.Write(bytearr)
 }
+
 func ListOfCustomers(w http.ResponseWriter, r *http.Request) {
-	db := ConnectToDB() //paging/пагинация
+	db := ConnectToDB()
 	defer db.Close()
 	var customers []Customer
 	rows, err := db.Query("SELECT * FROM customers;")
@@ -195,7 +226,7 @@ func ReplaceCustomer(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 	w.WriteHeader(http.StatusNoContent)
-	fmt.Printf("REPLACED USER with id (%s)", id)
+	fmt.Printf("REPLACED CUSTOMER WITH ID %s", id)
 	fmt.Println()
 }
 
@@ -204,7 +235,7 @@ func UpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 	defer r.Body.Close()
 	id := mux.Vars(r)["id"]
-	jsonDict := make(map[string]string)
+	jsonDict := make(map[string]interface{})
 	bytearr, _ := ioutil.ReadAll(r.Body)
 	err := json.Unmarshal(bytearr, &jsonDict)
 	if err != nil {
@@ -218,18 +249,18 @@ func UpdateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for key, val := range jsonDict {
-		result, err := db.Exec(fmt.Sprintf("UPDATE customers SET "+
-			"%s=$1 WHERE id=$2;", key), val, id)
+		result, err := db.Exec(fmt.Sprintf("UPDATE customers SET %s=$1 WHERE id=$2;", key),
+			val, id)
 		rowsAffected, _ := result.RowsAffected()
 		if err != nil || rowsAffected != 1 || result == nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Cant process your request"))
+			w.Write([]byte("Invalid data"))
 			fmt.Println(err)
 			return
 		}
 	}
-	w.WriteHeader(http.StatusNoContent)
-	fmt.Printf("UPDATED USER with id (%s)", id)
+	w.WriteHeader(http.StatusOK)
+	fmt.Printf("UPDATED USER with id %s", id)
 	fmt.Println()
 }
 func DeleteCustomer(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +280,7 @@ func DeleteCustomer(w http.ResponseWriter, r *http.Request) {
 	fmt.Println()
 }
 
+
 func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
 	defer db.Close()
@@ -256,7 +288,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	var account Account
 	account.CustomerId = mux.Vars(r)["id"]
 	account.AccountId = uuid.New().String()
-	account.Total = nil
+	account.Total = nil //evaluate with nil
 	bytearr, err := ioutil.ReadAll(r.Body)
 	if err = json.Unmarshal(bytearr, &account); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -264,17 +296,16 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
-	if account.Total == nil { //how to check if the json data is valid?!
+	if account.Total == nil { //check is Total(required field) is still nil
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid data"))
-		fmt.Println(err)
 		return
 	}
 	_, err = db.Exec("INSERT INTO accounts"+
 		"(total,customer_id,account_id)"+
 		"VALUES ("+
 		"$1,$2,$3);", account.Total, account.CustomerId, account.AccountId) //there is a foreign key,so it
-	// doesn't have a sense to check if explicitly
+	// doesn't have a sense to check if exist explicitly
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte("Wrong customer"))
@@ -314,26 +345,37 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var sendForm SendMoneyForm
-	customer_id := mux.Vars(r)["id"]
-	account_id := mux.Vars(r)["account_id"]
+	senders_id := mux.Vars(r)["id"]
 	bytearr, err := ioutil.ReadAll(r.Body)
-	var receiversMoney, sendersMoney float64
 	if err = json.Unmarshal(bytearr, &sendForm); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid data"))
 		fmt.Println(err)
 		return
 	}
-	rows, err := db.Query("SELECT total FROM accounts WHERE account_id=$1 AND customer_id=$2;", account_id, customer_id)
-	if err != nil {
-		fmt.Println(err)
+	if (SendMoneyForm{}) == sendForm {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("All fields are obligatory to fill"))
 		return
 	}
-	rows.Scan(&sendersMoney, &receiversMoney)
+	rows, err := db.Exec(fmt.Sprintf("UPDATE accounts SET total=total-%f WHERE account_id=$1;" +
+		"UPDATE accounts SET total=total+%f WHERE account_id=$2;",sendForm.Amount,sendForm.Amount),
+		sendForm.SendersAccNumber,sendForm.ReceiversAccNumber)
 	if err != nil {
 		fmt.Println(err)
+		tx.Rollback()
 		return
 	}
+	rows,err:=db.Exec("INSERT INTO transactions (senders_account_id,receivers_account_id," +
+		"amount, time_of_transaction) VALUES ($1,$2,$3,now());", sendForm.SendersAccNumber,
+		sendForm.ReceiversAccNumber,sendForm.Amount,)
+	aff,_:=rows.RowsAffected()
+	if aff!=2{
+		fmt.Println(err)
+		tx.Rollback()
+		return
+	}
+
 	if !rows.NextResultSet() {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
