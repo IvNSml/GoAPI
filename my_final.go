@@ -25,13 +25,13 @@ type Customer struct {
 	Phone     string `json:"phone"`
 }
 type Account struct {
-	AccountId          string
-	CustomerId         string
-	Total              *float64    `json:"total"`
-	IsBlocked          bool        `json:"is_blocked"`
+	AccountId  string
+	CustomerId string
+	Total      *float64 `json:"total"`
+	IsBlocked  bool    `json:"is_blocked"`
 }
 type SendMoneyForm struct {
-	SendersAccNumber   string	`json:"senders_acc_number"`
+	SendersAccNumber   string  `json:"senders_acc_number"`
 	ReceiversAccNumber string  `json:"receivers_acc_number"`
 	Amount             float64 `json:"amount"`
 }
@@ -54,7 +54,7 @@ func main() {
 		"CREATE TABLE accounts(" +
 		"customer_id VARCHAR(50) NOT NULL," +
 		"account_id VARCHAR(50) NOT NULL PRIMARY KEY," +
-		"total NUMERIC CHECK(total>=0)," +
+		"total NUMERIC CHECK(total>=0) NOT NULL," +
 		"is_blocked BOOLEAN DEFAULT FALSE," +
 		"FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE);")
 	if err != nil {
@@ -64,16 +64,17 @@ func main() {
 		"CREATE TABLE transactions(" +
 		"senders_account_id VARCHAR(50) NOT NULL," +
 		"receivers_account_id VARCHAR(50) NOT NULL," +
-		"amount NUMERIC CHECK(amount>=0)," +
+		"amount NUMERIC CHECK(amount>=0) NOT NULL," +
 		"time_of_transaction TIMESTAMP WITH TIME ZONE," +
 		"FOREIGN KEY (senders_account_id) REFERENCES accounts(account_id)," +
 		"FOREIGN KEY (receivers_account_id) REFERENCES accounts(account_id));")
 	if err != nil {
 		log.Fatal(err)
 	}
+	//We could connect to database only once in main function and pass sql.DB object in each
+	// function,but golang doesnt accepts overrides
 	subrouter := router.PathPrefix("/customers").Subrouter()
-	subrouter.HandleFunc("/", CreateCustomer).Methods(http.MethodPost) //I think its i,possible to override
-	//functon in go
+	subrouter.HandleFunc("/", CreateCustomer).Methods(http.MethodPost)
 	subrouter.HandleFunc("", ListOfCustomers).Methods(http.MethodGet)
 	subrouter.HandleFunc("/{id}", RetrieveCustomer).Methods(http.MethodGet)
 
@@ -82,9 +83,10 @@ func main() {
 	subrouter.HandleFunc("/{id}", DeleteCustomer).Methods(http.MethodDelete)
 
 	subrouter.HandleFunc("/{id}/create_acc", CreateAccount).Methods(http.MethodPost)
-	subrouter.HandleFunc("/{account_id}", DeleteAccount).Methods(http.MethodDelete)
+	subrouter.HandleFunc("/{account_id}/delete", DeleteAccount).Methods(http.MethodDelete)
 	subrouter.HandleFunc("/{account_id}/send", SendMoney).Methods(http.MethodPost)
-	subrouter.HandleFunc("/{account_id}/block",BlockAcc).Methods(http.MethodPatch)
+	subrouter.HandleFunc("/{account_id}/block", BlockAcc).Methods(http.MethodGet)
+	subrouter.HandleFunc("/{account_id}/total", GetMoney).Methods(http.MethodGet)
 	http.Handle("/", router)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		panic(err)
@@ -99,18 +101,7 @@ func ConnectToDB() (database *sql.DB) {
 	return database
 }
 
-func CheckIfExists(id string) bool {
-	db := ConnectToDB()
-	var b string
-	err := db.QueryRow("SELECT * FROM customers WHERE id=$1;", id).Scan(&b)
-	if err == sql.ErrNoRows {
-		return false
-	}
-	return true
-}
-
-func CreateCustomer(w http.ResponseWriter, r *http.Request) { //here I leave as it, because
-	// Handlefunc accepts only two args
+func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
 	defer db.Close()
 	defer r.Body.Close()
@@ -147,8 +138,7 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) { //here I leave as 
 	return
 }
 
-func RetrieveCustomer(w http.ResponseWriter, r *http.Request) { //regexp is regular expression, but
-	//because of uuid we wont use it
+func RetrieveCustomer(w http.ResponseWriter, r *http.Request) { //we wont use regular expression because of uuid
 	db := ConnectToDB()
 	defer db.Close()
 	id := mux.Vars(r)["id"]
@@ -271,11 +261,11 @@ func DeleteCustomer(w http.ResponseWriter, r *http.Request) {
 	result, err := db.Exec("DELETE FROM customers WHERE id=$1", id)
 	rowsAffected, _ := result.RowsAffected()
 	switch {
-	case err!=nil:
+	case err != nil:
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Println(err)
 		return
-	case rowsAffected!=1:
+	case rowsAffected != 1:
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid data"))
 		return
@@ -285,7 +275,6 @@ func DeleteCustomer(w http.ResponseWriter, r *http.Request) {
 		fmt.Println()
 	}
 }
-
 
 func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
@@ -302,7 +291,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
-	if account.Total == nil || *account.Total<0{ //check if Total(required field) is still nil
+	if account.Total == nil || *account.Total < 0 { //check if Total(required field) is still nil
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid data"))
 		return
@@ -329,14 +318,14 @@ func DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
 	defer db.Close()
 	account_id := mux.Vars(r)["account_id"]
-	result, err := db.Exec("DELETE FROM accounts WHERE account_id=$1",account_id)
+	result, err := db.Exec("DELETE FROM accounts WHERE account_id=$1", account_id)
 	rowsAffected, _ := result.RowsAffected()
 	switch {
-	case err!=nil:
+	case err != nil:
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Println(err)
 		return
-	case rowsAffected!=1:
+	case rowsAffected != 1:
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid data"))
 		return
@@ -346,7 +335,15 @@ func DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		fmt.Println()
 	}
 }
-
+func CheckBlocked (acc_id string)  (bool, error) {//Check if blocked and check if account id is valid
+	db:=ConnectToDB()
+	var r bool
+	err := db.QueryRow("SELECT is_blocked FROM accounts WHERE account_id=$1", acc_id).Scan(&r)
+	if err!=nil || err==sql.ErrNoRows{
+		return true,err
+	}
+	return r,nil
+}
 func SendMoney(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
 	defer db.Close()
@@ -363,35 +360,55 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
+	rec,err:=CheckBlocked(sendForm.ReceiversAccNumber)
+	if err!=nil{
+		fmt.Println(err)
+		return
+	}
+	send,err:=CheckBlocked(sendForm.ReceiversAccNumber)
+	if err!=nil{
+		fmt.Println(err)
+		return
+	}
+	if send{
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w,"Account %s is blocked or invalid data", sendForm.SendersAccNumber)
+		return
+	}
+	if rec{
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w,"Account %s is blocked or invalid data", sendForm.ReceiversAccNumber)
+		return
+	}
 	if (SendMoneyForm{}) == sendForm {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("All fields are obligatory to fill"))
 		return
 	}
-	rows, err := db.Exec(fmt.Sprintf("UPDATE accounts SET total=total-%f WHERE account_id=$1;",sendForm.Amount),
+	rows, err := db.Exec(fmt.Sprintf("UPDATE accounts SET total=total-%f WHERE account_id=$1;", sendForm.Amount),
 		sendForm.SendersAccNumber)
 	if err != nil {
 		tx.Rollback()
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w,"Invalid data:",err)
+		fmt.Fprint(w, "Invalid data:", err)
 		return
 	}
-	rows, err = db.Exec(fmt.Sprintf("UPDATE accounts SET total=total+%f WHERE account_id=$1;",sendForm.Amount),
+	rows, err = db.Exec(fmt.Sprintf("UPDATE accounts SET total=total+%f WHERE account_id=$1;", sendForm.Amount),
 		sendForm.ReceiversAccNumber)
 	if err != nil {
 		tx.Rollback()
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid data"))
+		fmt.Fprint(w, "Invalid data:", err)
 		return
 	}
-	rows,err=db.Exec("INSERT INTO transactions (senders_account_id,receivers_account_id," +
+	rows, err = db.Exec("INSERT INTO transactions (senders_account_id,receivers_account_id,"+
 		"amount, time_of_transaction) VALUES ($1,$2,$3,now());", sendForm.SendersAccNumber,
-		sendForm.ReceiversAccNumber,sendForm.Amount)
-	aff,_:=rows.RowsAffected()
-	if aff!=1{
+		sendForm.ReceiversAccNumber, sendForm.Amount)
+	aff, _ := rows.RowsAffected()
+	if aff != 1 {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w,"Transaction denied:",err)
+		fmt.Fprint(w, "Transaction denied:", err)
 		tx.Rollback()
 		return
 	}
@@ -403,6 +420,52 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 	fmt.Println()
 }
 
-func BlockAcc(w http.ResponseWriter, r *http.Request)  {
+func BlockAcc(w http.ResponseWriter, r *http.Request) {
+	db := ConnectToDB()
+	defer db.Close()
+	acc_id := mux.Vars(r)["account_id"]
+	b,err:=CheckBlocked(acc_id)
+	if err!=nil{
+		fmt.Println(err)
+		return
+	}
+	if b{
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w,"Account %s is already blocked or invalid data",acc_id)
+		return
+	}
+	_, err = db.Exec("UPDATE accounts SET is_blocked=TRUE WHERE account_id=$1;", acc_id)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w,"Account %s is blocked",acc_id)
+	fmt.Printf("Account %s is blocked",acc_id)
+}
+func GetMoney(w http.ResponseWriter, r *http.Request)  {
+	db:=ConnectToDB()
+	acc_id:=mux.Vars(r)["account_id"]
+	defer db.Close()
+	b,err:=CheckBlocked(acc_id)
+	if err!=nil{
+		fmt.Println(err)
+		return
+	}
+	if b{
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w,"Account %s is blocked or invalid data",acc_id)
+		return
+	}
+	var total float64
+	err = db.QueryRow("SELECT total FROM accounts WHERE account_id=$1", acc_id).Scan(&total)
+	if err!=nil{
+		fmt.Println(err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w,"Total on account: %f", total)
+}
+func SendNotification(account_id string){
 
 }
