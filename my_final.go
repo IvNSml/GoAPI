@@ -13,26 +13,25 @@ import (
 )
 
 const (
-	CONNSTR   = "host=localhost port=5432 user=postgres password=1234 dbname=postrgres sslmode=disable"
+	CONNSTR   = "postgres://postgres:1234@localhost:5432"
 	DB_DRIVER = "postgres"
 )
 
 type Customer struct {
-	ID        string `json:"id"`
+	ID        string
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Email     string `json:"email"`
 	Phone     string `json:"phone"`
 }
 type Account struct {
-	AccountId          string      `json:"account_id"`
-	CustomerId         string      `json:"customer_id"`
+	AccountId          string
+	CustomerId         string
 	Total              *float64    `json:"total"`
-	TimeOfTransactions []uuid.Time `json:"time_of_transactions"`
 	IsBlocked          bool        `json:"is_blocked"`
 }
 type SendMoneyForm struct {
-	SendersAccNumber   string  `json:"senders_acc_number"`
+	SendersAccNumber   string	`json:"senders_acc_number"`
 	ReceiversAccNumber string  `json:"receivers_acc_number"`
 	Amount             float64 `json:"amount"`
 }
@@ -55,7 +54,7 @@ func main() {
 		"CREATE TABLE accounts(" +
 		"customer_id VARCHAR(50) NOT NULL," +
 		"account_id VARCHAR(50) NOT NULL PRIMARY KEY," +
-		"total NUMERIC," +
+		"total NUMERIC CHECK(total>=0)," +
 		"is_blocked BOOLEAN DEFAULT FALSE," +
 		"FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE);")
 	if err != nil {
@@ -63,11 +62,11 @@ func main() {
 	}
 	_, err = init.Exec("DROP TABLE IF EXISTS transactions;" +
 		"CREATE TABLE transactions(" +
-		"senders_account_id VARCHAR(50) NOT NULL PRIMARY KEY," +
-		"receivers_account_id VARCHAR(50) NOT NULL PRIMARY KEY," +
-		"amount NUMERIC," +
+		"senders_account_id VARCHAR(50) NOT NULL," +
+		"receivers_account_id VARCHAR(50) NOT NULL," +
+		"amount NUMERIC CHECK(amount>=0)," +
 		"time_of_transaction TIMESTAMP WITH TIME ZONE," +
-		"FOREIGN KEY (senders_account_id) REFERENCES accounts(account_id)" +
+		"FOREIGN KEY (senders_account_id) REFERENCES accounts(account_id)," +
 		"FOREIGN KEY (receivers_account_id) REFERENCES accounts(account_id));")
 	if err != nil {
 		log.Fatal(err)
@@ -83,8 +82,9 @@ func main() {
 	subrouter.HandleFunc("/{id}", DeleteCustomer).Methods(http.MethodDelete)
 
 	subrouter.HandleFunc("/{id}/create_acc", CreateAccount).Methods(http.MethodPost)
-	subrouter.HandleFunc("/{id}/{account_id}", DeleteAccount).Methods(http.MethodDelete)
-	subrouter.HandleFunc("/{id}/send", SendMoney).Methods(http.MethodPost)
+	subrouter.HandleFunc("/{account_id}", DeleteAccount).Methods(http.MethodDelete)
+	subrouter.HandleFunc("/{account_id}/send", SendMoney).Methods(http.MethodPost)
+	subrouter.HandleFunc("/{account_id}/block",BlockAcc).Methods(http.MethodPatch)
 	http.Handle("/", router)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		panic(err)
@@ -270,14 +270,20 @@ func DeleteCustomer(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	result, err := db.Exec("DELETE FROM customers WHERE id=$1", id)
 	rowsAffected, _ := result.RowsAffected()
-	if err != nil || rowsAffected != 1 || result == nil {
+	switch {
+	case err!=nil:
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Println(err)
 		return
+	case rowsAffected!=1:
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Invalid data"))
+		return
+	default:
+		w.WriteHeader(http.StatusOK)
+		fmt.Printf("DELETED CUSTOMER %s", id)
+		fmt.Println()
 	}
-	w.WriteHeader(http.StatusOK)
-	fmt.Printf("DELETED USER with id (%s)", id)
-	fmt.Println()
 }
 
 
@@ -296,7 +302,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
-	if account.Total == nil { //check is Total(required field) is still nil
+	if account.Total == nil || *account.Total<0{ //check if Total(required field) is still nil
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid data"))
 		return
@@ -314,7 +320,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(account.AccountId))
-	fmt.Printf("CREATED ACCOUNT WITH ID (%s) TO USER WITH ID(%s)", account.AccountId, account.CustomerId)
+	fmt.Printf("CREATED ACCOUNT WITH ID %s TO USER WITH ID %s", account.AccountId, account.CustomerId)
 	fmt.Println()
 	return
 }
@@ -322,30 +328,34 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 func DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
 	defer db.Close()
-	customer_id := mux.Vars(r)["id"]
 	account_id := mux.Vars(r)["account_id"]
-	result, err := db.Exec("DELETE FROM accounts WHERE customer_id=$1 AND account_id=$2", customer_id, account_id)
+	result, err := db.Exec("DELETE FROM accounts WHERE account_id=$1",account_id)
 	rowsAffected, _ := result.RowsAffected()
-	if err != nil || rowsAffected != 1 || result == nil {
+	switch {
+	case err!=nil:
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Println(err)
 		return
+	case rowsAffected!=1:
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Invalid data"))
+		return
+	default:
+		w.WriteHeader(http.StatusOK)
+		fmt.Printf("DELETED ACCOUNT %s", account_id)
+		fmt.Println()
 	}
-	w.WriteHeader(http.StatusOK)
-	fmt.Printf("DELETED ACCOUNT (%s) OWNED BY USER (%s)", account_id, customer_id)
-	fmt.Println()
 }
 
 func SendMoney(w http.ResponseWriter, r *http.Request) {
 	db := ConnectToDB()
 	defer db.Close()
 	tx, err := db.Begin()
-	if tx != nil {
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	var sendForm SendMoneyForm
-	senders_id := mux.Vars(r)["id"]
 	bytearr, err := ioutil.ReadAll(r.Body)
 	if err = json.Unmarshal(bytearr, &sendForm); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -358,65 +368,41 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("All fields are obligatory to fill"))
 		return
 	}
-	rows, err := db.Exec(fmt.Sprintf("UPDATE accounts SET total=total-%f WHERE account_id=$1;" +
-		"UPDATE accounts SET total=total+%f WHERE account_id=$2;",sendForm.Amount,sendForm.Amount),
-		sendForm.SendersAccNumber,sendForm.ReceiversAccNumber)
+	rows, err := db.Exec(fmt.Sprintf("UPDATE accounts SET total=total-%f WHERE account_id=$1;",sendForm.Amount),
+		sendForm.SendersAccNumber)
 	if err != nil {
-		fmt.Println(err)
 		tx.Rollback()
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w,"Invalid data:",err)
 		return
 	}
-	rows,err:=db.Exec("INSERT INTO transactions (senders_account_id,receivers_account_id," +
+	rows, err = db.Exec(fmt.Sprintf("UPDATE accounts SET total=total+%f WHERE account_id=$1;",sendForm.Amount),
+		sendForm.ReceiversAccNumber)
+	if err != nil {
+		tx.Rollback()
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Invalid data"))
+		return
+	}
+	rows,err=db.Exec("INSERT INTO transactions (senders_account_id,receivers_account_id," +
 		"amount, time_of_transaction) VALUES ($1,$2,$3,now());", sendForm.SendersAccNumber,
-		sendForm.ReceiversAccNumber,sendForm.Amount,)
+		sendForm.ReceiversAccNumber,sendForm.Amount)
 	aff,_:=rows.RowsAffected()
-	if aff!=2{
+	if aff!=1{
 		fmt.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w,"Transaction denied:",err)
 		tx.Rollback()
 		return
 	}
-
-	if !rows.NextResultSet() {
-		fmt.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	rows, err = db.Query("SELECT total FROM accounts WHERE account_id=$1 AND customer_id=$2;", sendForm.Receiver, sendForm.ReceiversAccNumber)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	rows.Scan(&sendersMoney, &receiversMoney)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	sendersMoney -= sendForm.Amount
-	receiversMoney += sendForm.Amount
-	res, err := db.Exec("UPDATE accounts SET total=$1 WHERE customer_id=$2 AND account_id=$3;"+
-		"UPDATE accounts SET total=$4, WHERE customer_id=$5 AND account_id=$6", sendersMoney, account_id, customer_id, receiversMoney, sendForm.Receiver, sendForm.ReceiversAccNumber)
-	rowsAffected, _ := res.RowsAffected()
-	if err != nil || rowsAffected != 1 || res == nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		if err = tx.Rollback(); err != nil {
-			fmt.Println(err)
-			return
-		}
-	} //time of committing of any operation or what?
-	res, err = db.Exec("UPDATE accounts SET time_of_transactions=array_append(time_of_transactions,now()) WHERE account_id='$1';", account_id)
-	if err != nil {
-		fmt.Println(err)
-		if err = tx.Rollback(); err != nil {
-			fmt.Println(err)
-			return
-		}
-	}
-
-	if err = tx.Commit(); err != nil {
-		fmt.Println(err)
-		return
-	}
+	tx.Commit()
 	w.WriteHeader(http.StatusOK)
-	fmt.Printf("SENT (%f) FROM USER (%s) TO USER (%s)", sendForm.Amount, account_id, sendForm.Receiver)
+	w.Write([]byte("Transaction approved;"))
+	fmt.Printf("SENT %f FROM ACCOUNT %s TO ACCOUNT %s", sendForm.Amount, sendForm.SendersAccNumber,
+		sendForm.ReceiversAccNumber)
 	fmt.Println()
+}
+
+func BlockAcc(w http.ResponseWriter, r *http.Request)  {
+
 }
