@@ -94,11 +94,6 @@ func CheckBlocked(acc_id string) (bool, error) { //Check if blocked and check if
 func SendMoney(w http.ResponseWriter, r *http.Request) {
 	db := crud.ConnectToDB()
 	defer db.Close()
-	tx, err := db.Begin()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	var sendForm SendMoneyForm
 	bytearr, err := ioutil.ReadAll(r.Body)
 	if err = json.Unmarshal(bytearr, &sendForm); err != nil {
@@ -130,6 +125,11 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 	if (SendMoneyForm{}) == sendForm {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("All fields are obligatory to fill"))
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 	rows, err := db.Exec(fmt.Sprintf("UPDATE accounts SET total=total-%f WHERE account_id=$1;", sendForm.Amount),
