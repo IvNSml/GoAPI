@@ -9,8 +9,6 @@ import (
 	"net/http"
 )
 
-
-
 func main() {
 	router := mux.NewRouter()
 	init := crud.ConnectToDB()
