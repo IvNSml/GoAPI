@@ -10,10 +10,12 @@ import (
 	"log"
 	"net/http"
 )
+
 const (
 	CONNSTR   = "postgres://postgres:1234@localhost:5432"
 	DB_DRIVER = "postgres"
 )
+
 type Customer struct {
 	ID        string
 	FirstName string `json:"first_name"`
@@ -25,7 +27,7 @@ type Account struct {
 	AccountId  string
 	CustomerId string
 	Total      *float64 `json:"total"`
-	IsBlocked  bool    `json:"is_blocked"`
+	IsBlocked  bool     `json:"is_blocked"`
 }
 type SendMoneyForm struct {
 	SendersAccNumber   string  `json:"senders_acc_number"`

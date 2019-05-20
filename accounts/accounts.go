@@ -70,14 +70,14 @@ func DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		fmt.Println()
 	}
 }
-func CheckBlocked (acc_id string)  (bool, error) {//Check if blocked and check if account id is valid
-	db:=crud.ConnectToDB()
+func CheckBlocked(acc_id string) (bool, error) { //Check if blocked and check if account id is valid
+	db := crud.ConnectToDB()
 	var r bool
 	err := db.QueryRow("SELECT is_blocked FROM accounts WHERE account_id=$1", acc_id).Scan(&r)
-	if err!=nil || err==sql.ErrNoRows{
-		return true,err
+	if err != nil || err == sql.ErrNoRows {
+		return true, err
 	}
-	return r,nil
+	return r, nil
 }
 func SendMoney(w http.ResponseWriter, r *http.Request) {
 	db := crud.ConnectToDB()
@@ -95,24 +95,24 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
-	rec,err:=CheckBlocked(sendForm.ReceiversAccNumber)
-	if err!=nil{
+	rec, err := CheckBlocked(sendForm.ReceiversAccNumber)
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	send,err:=CheckBlocked(sendForm.ReceiversAccNumber)
-	if err!=nil{
+	send, err := CheckBlocked(sendForm.ReceiversAccNumber)
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	if send{
+	if send {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w,"Account %s is blocked or invalid data", sendForm.SendersAccNumber)
+		fmt.Fprintf(w, "Account %s is blocked or invalid data", sendForm.SendersAccNumber)
 		return
 	}
-	if rec{
+	if rec {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w,"Account %s is blocked or invalid data", sendForm.ReceiversAccNumber)
+		fmt.Fprintf(w, "Account %s is blocked or invalid data", sendForm.ReceiversAccNumber)
 		return
 	}
 	if (crud.SendMoneyForm{}) == sendForm {
@@ -137,7 +137,7 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err = db.Exec("INSERT INTO transactions (senders_account_id,receivers_account_id,"+
-		"amount, time_of_transaction) VALUES ($1,$2,$3,now());", sendForm.SendersAccNumber,
+		"amount, time_of_transaction) VALUES ($1,$2,$3,transaction_timestamp());", sendForm.SendersAccNumber,
 		sendForm.ReceiversAccNumber, sendForm.Amount)
 	aff, _ := rows.RowsAffected()
 	if aff != 1 {
@@ -150,8 +150,7 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 	tx.Commit()
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Transaction approved;"))
-	fmt.Printf("SENT %f FROM ACCOUNT %s TO ACCOUNT %s", sendForm.Amount, sendForm.SendersAccNumber,
-		sendForm.ReceiversAccNumber)
+	SendNotification(sendForm.ReceiversAccNumber, sendForm.SendersAccNumber, sendForm.Amount)
 	fmt.Println()
 }
 
@@ -159,14 +158,14 @@ func BlockAcc(w http.ResponseWriter, r *http.Request) {
 	db := crud.ConnectToDB()
 	defer db.Close()
 	acc_id := mux.Vars(r)["account_id"]
-	b,err:=CheckBlocked(acc_id)
-	if err!=nil{
+	b, err := CheckBlocked(acc_id)
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	if b{
+	if b {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w,"Account %s is already blocked or invalid data",acc_id)
+		fmt.Fprintf(w, "Account %s is already blocked or invalid data", acc_id)
 		return
 	}
 	_, err = db.Exec("UPDATE accounts SET is_blocked=TRUE WHERE account_id=$1;", acc_id)
@@ -175,32 +174,75 @@ func BlockAcc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w,"Account %s is blocked",acc_id)
-	fmt.Printf("Account %s is blocked",acc_id)
+	fmt.Fprintf(w, "Account %s is blocked", acc_id)
+	fmt.Printf("Account %s is blocked", acc_id)
 }
-func GetMoney(w http.ResponseWriter, r *http.Request)  {
-	db:=crud.ConnectToDB()
-	acc_id:=mux.Vars(r)["account_id"]
+func GetMoney(w http.ResponseWriter, r *http.Request) {
+	db := crud.ConnectToDB()
+	acc_id := mux.Vars(r)["account_id"]
 	defer db.Close()
-	b,err:=CheckBlocked(acc_id)
-	if err!=nil{
+	b, err := CheckBlocked(acc_id)
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	if b{
+	if b {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w,"Account %s is blocked or invalid data",acc_id)
+		fmt.Fprintf(w, "Account %s is blocked or invalid data", acc_id)
 		return
 	}
 	var total float64
 	err = db.QueryRow("SELECT total FROM accounts WHERE account_id=$1", acc_id).Scan(&total)
-	if err!=nil{
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w,"Total on account: %f", total)
+	fmt.Fprintf(w, "Total on account: %f", total)
 }
-func SendNotification(account_id string){
+func SendNotification(recievers_acc string, senders_acc string, amount float64) {
+	db := crud.ConnectToDB()
+	defer db.Close()
+	var reciever, sender crud.Customer
+	//here our query select all users from who have id or phone; we use receivers account id as a key in the
+	//first query and senders account id in the second;
+	err := db.QueryRow("SELECT email,phone FROM customers INNER JOIN (SELECT customer_id FROM accounts "+
+		"INNER JOIN transactions ON accounts.account_id = transactions.receivers_account_id"+
+		" WHERE transactions.receivers_account_id=$1) AS cus_id ON"+
+		" cus_id.customer_id=customers.id;", recievers_acc).Scan(&reciever.Email, &reciever.Phone)
+	switch {
+	case err == sql.ErrNoRows:
+
+	case err != nil:
+		fmt.Println(err)
+		return
+	case reciever.Phone == "":
+		fmt.Printf("To %s: You recieved %f from account %s\n", reciever.Email, amount, senders_acc)
+	case reciever.Email == "":
+		fmt.Printf("To %s: You recieved %f from account %s\n", reciever.Phone, amount, senders_acc)
+	default:
+		fmt.Printf("To %s and %s: You recieved %f from account %s\n", reciever.Phone,
+			reciever.Email, amount, senders_acc)
+	}
+	err = db.QueryRow("SELECT email,phone FROM customers INNER JOIN (SELECT customer_id FROM accounts "+
+		"INNER JOIN transactions ON accounts.account_id = transactions.senders_account_id"+
+		" WHERE transactions.senders_account_id=$1) AS cus_id ON"+
+		" cus_id.customer_id=customers.id;", senders_acc).Scan(&sender.Email, &sender.Phone)
+	switch {
+	case err == sql.ErrNoRows:
+
+	case err != nil:
+		fmt.Println(err)
+		return
+	case sender.Phone == "":
+		fmt.Printf("To %s: You have sent %f to account %s\n", sender.Email, amount, recievers_acc)
+	case sender.Email == "":
+		fmt.Printf("To %s: You have sent %f to account %s\n", reciever.Phone, amount, recievers_acc)
+	default:
+		fmt.Printf("To %s and %s: You have sent %f to account %s\n", reciever.Phone,
+			reciever.Email, amount, recievers_acc)
+	}
+}
+func GetByDate(w http.ResponseWriter, r *http.Request) {
 
 }
