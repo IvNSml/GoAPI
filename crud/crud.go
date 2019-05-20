@@ -29,11 +29,6 @@ type Account struct {
 	Total      *float64 `json:"total"`
 	IsBlocked  bool     `json:"is_blocked"`
 }
-type SendMoneyForm struct {
-	SendersAccNumber   string  `json:"senders_acc_number"`
-	ReceiversAccNumber string  `json:"receivers_acc_number"`
-	Amount             float64 `json:"amount"`
-}
 
 func ConnectToDB() (database *sql.DB) {
 	database, err := sql.Open(DB_DRIVER, CONNSTR)

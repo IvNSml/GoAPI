@@ -8,8 +8,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"io/ioutil"
+	"log"
 	"net/http"
 )
+
+type SendMoneyForm struct {
+	Time               string
+	SendersAccNumber   string  `json:"senders_acc_number"`
+	ReceiversAccNumber string  `json:"receivers_acc_number"`
+	Amount             float64 `json:"amount"`
+}
+type GetDate struct {
+	From_timestamp string `json:"from"`
+	To_timestamp   string `json:"to"`
+}
 
 func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	db := crud.ConnectToDB()
@@ -87,7 +99,7 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
-	var sendForm crud.SendMoneyForm
+	var sendForm SendMoneyForm
 	bytearr, err := ioutil.ReadAll(r.Body)
 	if err = json.Unmarshal(bytearr, &sendForm); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -115,7 +127,7 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Account %s is blocked or invalid data", sendForm.ReceiversAccNumber)
 		return
 	}
-	if (crud.SendMoneyForm{}) == sendForm {
+	if (SendMoneyForm{}) == sendForm {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("All fields are obligatory to fill"))
 		return
@@ -244,5 +256,37 @@ func SendNotification(recievers_acc string, senders_acc string, amount float64) 
 	}
 }
 func GetByDate(w http.ResponseWriter, r *http.Request) {
-
+	db := crud.ConnectToDB()
+	defer db.Close()
+	data := GetDate{}
+	bytearr, err := ioutil.ReadAll(r.Body)
+	if err = json.Unmarshal(bytearr, &data); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Invalid data"))
+		fmt.Println(err)
+		return
+	}
+	rows, err := db.Query("SELECT * FROM transactions WHERE time_of_transaction<$1 AND time_of_transaction>$2;", data.To_timestamp, data.From_timestamp)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	var resp []SendMoneyForm
+	for i := 0; rows.Next(); i++ {
+		rows.Scan(&resp[i].SendersAccNumber, &resp[i].ReceiversAccNumber, &resp[i].Amount, &resp[i].Time)
+	}
+	if err = rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+	if len(resp) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		w.Write([]byte("No transactions at this time"))
+		return
+	}
+	b, err := json.MarshalIndent(&resp, "", " ")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	w.Write(b)
 }

@@ -60,6 +60,8 @@ func main() {
 	subrouter.HandleFunc("/{account_id}/send", accounts.SendMoney).Methods(http.MethodPost)
 	subrouter.HandleFunc("/{account_id}/block", accounts.BlockAcc).Methods(http.MethodGet)
 	subrouter.HandleFunc("/{account_id}/total", accounts.GetMoney).Methods(http.MethodGet)
+
+	subrouter.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
 	http.Handle("/", router)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		panic(err)
