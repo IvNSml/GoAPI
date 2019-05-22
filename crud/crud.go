@@ -60,10 +60,15 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.ID = uuid.New().String()
-	_, err = db.Query("INSERT INTO customers"+
+	rows, err := db.Exec("INSERT INTO customers"+
 		"(id,first_name,last_name,email,phone)"+
 		"VALUES ("+
 		"$1,$2,$3,$4,$5);", &c.ID, &c.FirstName, &c.LastName, &c.Email, &c.Phone)
+	ra, _ := rows.RowsAffected()
+	if ra != 1 {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
