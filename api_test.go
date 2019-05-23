@@ -28,17 +28,19 @@ type WrongCust struct {
 }
 
 func mkstr(size int) string {
-	if size == 0 {
-		return mkstr(5)
+	if size==0{
+		log.Fatal("Error: size is 0;")
 	}
 	str := make([]byte, size)
 	for i := range str {
 		rand.Seed(time.Now().UnixNano())
 		str[i] = letters[rand.Intn(len(letters))]
 	}
+	if size == 0 {
+		return mkstr(size)
+	}
 	return string(str)
 }
-
 
 func TestCreateCustomer(t *testing.T) {
 	var customers []crud.Customer
@@ -56,14 +58,14 @@ func TestCreateCustomer(t *testing.T) {
 		if err!=nil{
 			fmt.Println(err)
 		}
-		testStat(bytearr,http.StatusCreated,http.MethodPost)
+		testStat(bytearr,http.StatusCreated,http.MethodPost,"/customers/")
 	}
 	c:=WrongCust{FirstName:145,LastName:-10,Email:float64(14),Phone:float32(1251)}
 	bytearr,err:=json.Marshal(&c)
 	if err!=nil{
 		fmt.Println(err)
 	}
-	testStat(bytearr,http.StatusBadRequest,http.MethodPost)
+	testStat(bytearr,http.StatusBadRequest,http.MethodPost,"/customers/")
 }
 func handler() http.Handler {
 	r:=mux.NewRouter()
@@ -85,15 +87,15 @@ func handler() http.Handler {
 	s.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
 	return s
 }
-func testStat(data []byte, expectStatus int, method string) {
-	if data == nil && method == http.MethodGet {
+func testStat(data []byte, expectStatus int, method string,url string) {
+	srv:=httptest.NewServer(handler())
+	defer srv.Close()
+	client:=http.Client{}
+	switch  {
+	case data == nil && method == http.MethodGet:
 		_=httptest.NewRequest(http.MethodGet, "http://localhost:8080/customers/", nil)
-	}
-	if data != nil && method == http.MethodPost {
-		srv:=httptest.NewServer(handler())
-		defer srv.Close()
-		client:=http.Client{}
-		resp,err:=client.Post(fmt.Sprintf("%s/customers/", srv.URL),"application/json",bytes.NewBuffer(data))
+	case data != nil && method == http.MethodPost:
+		resp,err:=client.Post(fmt.Sprintf("%s%s", srv.URL, url),"application/json",bytes.NewBuffer(data))
 		if err!=nil{
 			log.Fatal(err)
 		}
@@ -102,5 +104,7 @@ func testStat(data []byte, expectStatus int, method string) {
 				expectStatus, resp.StatusCode)
 			return
 		}
+	case :
+
 	}
 }
