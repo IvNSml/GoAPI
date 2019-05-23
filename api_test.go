@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"final/_vendor-20190519220328/github.com/gorilla/mux"
+	"final/accounts"
 	"final/crud"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +18,14 @@ import (
 var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 const WILLBEEXEC = 150
+
+type WrongCust struct {
+	ID        int
+	FirstName int `json:"first_name"`
+	LastName  int `json:"last_name"`
+	Email     float64 `json:"email"`
+	Phone     float32 `json:"phone"`
+}
 
 func mkstr(size int) string {
 	if size == 0 {
@@ -28,10 +39,6 @@ func mkstr(size int) string {
 	return string(str)
 }
 
-type WrongCust struct {
-	crud.Customer
-	FirstName int
-}
 
 func TestCreateCustomer(t *testing.T) {
 	var customers []crud.Customer
@@ -44,35 +51,56 @@ func TestCreateCustomer(t *testing.T) {
 	customers = append(customers, crud.Customer{FirstName: mkstr(rand.Intn(20)),
 		LastName: mkstr(rand.Intn(20))})
 
-	for _, c := range customers {
-		testStat(&c, http.StatusCreated)
+	for _,c := range customers {
+		bytearr,err:=json.Marshal(&c)
+		if err!=nil{
+			fmt.Println(err)
+		}
+		testStat(bytearr,http.StatusCreated,http.MethodPost)
 	}
+	c:=WrongCust{FirstName:145,LastName:-10,Email:float64(14),Phone:float32(1251)}
+	bytearr,err:=json.Marshal(&c)
+	if err!=nil{
+		fmt.Println(err)
+	}
+	testStat(bytearr,http.StatusBadRequest,http.MethodPost)
+}
+func handler() http.Handler {
+	r:=mux.NewRouter()
+	s := r.PathPrefix("/customers").Subrouter()
+	s.HandleFunc("/", crud.CreateCustomer).Methods(http.MethodPost)
+	s.HandleFunc("", crud.ListOfCustomers).Methods(http.MethodGet)
+	s.HandleFunc("/{id}", crud.RetrieveCustomer).Methods(http.MethodGet)
+
+	s.HandleFunc("/{id}", crud.ReplaceCustomer).Methods(http.MethodPut)
+	s.HandleFunc("/{id}", crud.UpdateCustomer).Methods(http.MethodPatch)
+	s.HandleFunc("/{id}", crud.DeleteCustomer).Methods(http.MethodDelete)
+
+	s.HandleFunc("/{id}/create_acc", accounts.CreateAccount).Methods(http.MethodPost)
+	s.HandleFunc("/{account_id}/delete", accounts.DeleteAccount).Methods(http.MethodDelete)
+	s.HandleFunc("/{account_id}/send", accounts.SendMoney).Methods(http.MethodPost)
+	s.HandleFunc("/{account_id}/block", accounts.BlockAcc).Methods(http.MethodGet)
+	s.HandleFunc("/{account_id}/total", accounts.GetMoney).Methods(http.MethodGet)
+
+	s.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
+	return s
 }
 func testStat(data []byte, expectStatus int, method string) {
-	srv := httptest.NewServer(func() http.Handler {
-		r := mux.NewRouter()
-		r.HandleFunc("/", crud.CreateCustomer).Methods(http.MethodPost)
-		return r
-	}())
-	defer srv.Close()
-
-	if err != nil {
-		t.Fatal(err)
-	}
 	if data == nil && method == http.MethodGet {
-		httptest.NewRequest(http.MethodGet, "http://localhost:8080/customers/", nil)
+		_=httptest.NewRequest(http.MethodGet, "http://localhost:8080/customers/", nil)
 	}
 	if data != nil && method == http.MethodPost {
-		req := httptest.NewRequest(method, "http://localhost:8080/customers/",
-			bytes.NewBuffer(data))
-		fmt.Println(string(data))
-	}
-	rec := httptest.NewRecorder()
-	crud.CreateCustomer(rec, req)
-	result := rec.Result()
-	if result.StatusCode != http.StatusCreated {
-		fmt.Printf("ERROR: While sending post expected status %d,got %d",
-			expectStatus, result.StatusCode)
-		return
+		srv:=httptest.NewServer(handler())
+		defer srv.Close()
+		client:=http.Client{}
+		resp,err:=client.Post(fmt.Sprintf("%s/customers/", srv.URL),"application/json",bytes.NewBuffer(data))
+		if err!=nil{
+			log.Fatal(err)
+		}
+		if resp.StatusCode != expectStatus {
+			fmt.Printf("ERROR: While sending post expected status %d,got %d",
+				expectStatus, resp.StatusCode)
+			return
+		}
 	}
 }
