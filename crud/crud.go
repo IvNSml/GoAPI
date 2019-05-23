@@ -64,6 +64,12 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 		"(id,first_name,last_name,email,phone)"+
 		"VALUES ("+
 		"$1,$2,$3,$4,$5);", &c.ID, &c.FirstName, &c.LastName, &c.Email, &c.Phone)
+	if err!=nil{
+		fmt.Println(err)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Invalid data"))
+		return
+	}
 	ra, _ := rows.RowsAffected()
 	if ra != 1 {
 		w.WriteHeader(http.StatusInternalServerError)
