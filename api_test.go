@@ -27,6 +27,28 @@ type WrongCust struct {
 	Phone     float32 `json:"phone"`
 }
 
+func handler() http.Handler {
+	r:=mux.NewRouter()
+	s := r.PathPrefix("/customers").Subrouter()
+	s.HandleFunc("/", crud.CreateCustomer).Methods(http.MethodPost)
+	s.HandleFunc("", crud.ListOfCustomers).Methods(http.MethodGet)
+	//I don't know how to send a request
+	//properly; mux.Vars can't catch regexp {id}. So I found this article http://mrgossett.com/post/mux-vars-problem/
+	s.HandleFunc("/{id}", crud.RetrieveCustomer).Methods(http.MethodGet)
+	s.HandleFunc("/{id}", crud.ReplaceCustomer).Methods(http.MethodPut)
+	s.HandleFunc("/{id}", crud.UpdateCustomer).Methods(http.MethodPatch)
+	s.HandleFunc("/{id}", crud.DeleteCustomer).Methods(http.MethodDelete)
+
+	s.HandleFunc("/{id}/create_acc", accounts.CreateAccount).Methods(http.MethodPost)
+	s.HandleFunc("/{account_id}/delete", accounts.DeleteAccount).Methods(http.MethodDelete)
+	s.HandleFunc("/{account_id}/send", accounts.SendMoney).Methods(http.MethodPost)
+	s.HandleFunc("/{account_id}/block", accounts.BlockAcc).Methods(http.MethodGet)
+	s.HandleFunc("/{account_id}/total", accounts.GetMoney).Methods(http.MethodGet)
+
+	s.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
+	return s
+}
+
 func mkstr(size int) string {
 	str := make([]byte, size)
 	for i := range str {
@@ -55,14 +77,20 @@ func TestCreateCustomer(t *testing.T) {
 		if err!=nil{
 			fmt.Println(err)
 		}
-		testStat(bytearr,http.StatusCreated,http.MethodPost,"/customers/")
+		err=testStat(bytearr,http.StatusCreated,http.MethodPost,"/customers/")
+		if err!=nil{
+			fmt.Println(err)
+		}
 		c:=WrongCust{FirstName:rand.Intn(100),LastName:-10,Email:rand.NormFloat64(),Phone:float32(rand.NormFloat64())}
 		//other req border
 		bytearr,err=json.Marshal(&c)
 		if err!=nil{
 			fmt.Println(err)
 		}
-		testStat(bytearr,http.StatusBadRequest,http.MethodPost,"/customers/")
+		err=testStat(bytearr,http.StatusBadRequest,http.MethodPost,"/customers/")
+		if err!=nil{
+			fmt.Println(err)
+		}
 	}
 }
 func TestRetrieveCustomer(t *testing.T)  {
@@ -75,7 +103,8 @@ func TestRetrieveCustomer(t *testing.T)  {
 		log.Fatal(err)
 	}
 	for rows.Next(){
-		rows.Scan(&c.ID,c.FirstName,)
+		rows.Scan(&c.ID,
+			&c.FirstName, &c.LastName, &c.Email, &c.Phone)
 		arr=append(arr,c)
 	}
 	if err!=rows.Err(){
@@ -83,30 +112,13 @@ func TestRetrieveCustomer(t *testing.T)  {
 	}
 	defer rows.Close()
 	for _,c:=range arr{
-		testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/%s/",c))
+		err:=testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/customers/%s",c.ID))
+		if err!=nil{
+			fmt.Println(err)
+		}
 	}
 }
-func handler() http.Handler {
-	r:=mux.NewRouter()
-	s := r.PathPrefix("/customers").Subrouter()
-	s.HandleFunc("/", crud.CreateCustomer).Methods(http.MethodPost)
-	s.HandleFunc("", crud.ListOfCustomers).Methods(http.MethodGet)
-	s.HandleFunc("/{id}", crud.RetrieveCustomer).Methods(http.MethodGet)
-
-	s.HandleFunc("/{id}", crud.ReplaceCustomer).Methods(http.MethodPut)
-	s.HandleFunc("/{id}", crud.UpdateCustomer).Methods(http.MethodPatch)
-	s.HandleFunc("/{id}", crud.DeleteCustomer).Methods(http.MethodDelete)
-
-	s.HandleFunc("/{id}/create_acc", accounts.CreateAccount).Methods(http.MethodPost)
-	s.HandleFunc("/{account_id}/delete", accounts.DeleteAccount).Methods(http.MethodDelete)
-	s.HandleFunc("/{account_id}/send", accounts.SendMoney).Methods(http.MethodPost)
-	s.HandleFunc("/{account_id}/block", accounts.BlockAcc).Methods(http.MethodGet)
-	s.HandleFunc("/{account_id}/total", accounts.GetMoney).Methods(http.MethodGet)
-
-	s.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
-	return s
-}
-func testStat(data []byte, expectStatus int, method string,url string) {
+func testStat(data []byte, expectStatus int, method string,url string) error{
 	srv := httptest.NewServer(handler())
 	defer srv.Close()
 	client := &http.Client{}
@@ -117,12 +129,12 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 			log.Fatal(err)
 		}
 		if resp.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
+			err:=fmt.Errorf("ERROR: While sending get expected status %d,got %d\n",
 				expectStatus, resp.StatusCode)
-			return
+			return err
 		} else {
 			fmt.Printf("Got status:%d\n", expectStatus)
-			return
+			return nil
 		}
 	case method == http.MethodPost:
 		resp, err := client.Post(fmt.Sprintf("%s%s", srv.URL, url), "application/json", bytes.NewBuffer(data))
@@ -130,12 +142,12 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 			log.Fatal(err)
 		}
 		if resp.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
+			err=fmt.Errorf("ERROR: While sending post expected status %d,got %d\n",
 				expectStatus, resp.StatusCode)
-			return
+			return err
 		} else {
 			fmt.Printf("Got status:%d\n", expectStatus)
-			return
+			return nil
 		}
 
 	case method == http.MethodPatch:
@@ -146,12 +158,13 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 			fmt.Println(err)
 		}
 		if resp.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
+			err=fmt.Errorf("ERROR: While sending post expected status %d,got %d\n",
 				expectStatus, resp.StatusCode)
-			return
+			return err
 		} else {
 			fmt.Printf("Got status:%d\n", expectStatus)
-			return
+			return  nil
 		}
 	}
+	return fmt.Errorf("Error!")
 }
