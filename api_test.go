@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bou.ke/monkey"
 	"bytes"
 	"encoding/json"
 	"final/_vendor-20190519220328/github.com/gorilla/mux"
@@ -18,7 +17,7 @@ import (
 
 var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-const WILLBEEXEC = 150
+const WILLBEEXEC = 50
 
 type WrongCust struct {
 	ID        int
@@ -29,16 +28,13 @@ type WrongCust struct {
 }
 
 func mkstr(size int) string {
-	if size==0{
-		log.Fatal("Error: size is 0;")
-	}
 	str := make([]byte, size)
 	for i := range str {
 		rand.Seed(time.Now().UnixNano())
 		str[i] = letters[rand.Intn(len(letters))]
 	}
 	if size == 0 {
-		return mkstr(size)
+		return mkstr(10)
 	}
 	return string(str)
 }
@@ -60,13 +56,35 @@ func TestCreateCustomer(t *testing.T) {
 			fmt.Println(err)
 		}
 		testStat(bytearr,http.StatusCreated,http.MethodPost,"/customers/")
+		c:=WrongCust{FirstName:rand.Intn(100),LastName:-10,Email:rand.NormFloat64(),Phone:float32(rand.NormFloat64())}
+		//other req border
+		bytearr,err=json.Marshal(&c)
+		if err!=nil{
+			fmt.Println(err)
+		}
+		testStat(bytearr,http.StatusBadRequest,http.MethodPost,"/customers/")
 	}
-	c:=WrongCust{FirstName:145,LastName:-10,Email:float64(14),Phone:float32(1251)}
-	bytearr,err:=json.Marshal(&c)
+}
+func TestRetrieveCustomer(t *testing.T)  {
+	db:=crud.ConnectToDB()
+	defer db.Close()
+	var (c crud.Customer
+	arr []crud.Customer)
+	rows,err:=db.Query("SELECT * FROM customers;")
 	if err!=nil{
-		fmt.Println(err)
+		log.Fatal(err)
 	}
-	testStat(bytearr,http.StatusBadRequest,http.MethodPost,"/customers/")
+	for rows.Next(){
+		rows.Scan(&c.ID,c.FirstName,)
+		arr=append(arr,c)
+	}
+	if err!=rows.Err(){
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	for _,c:=range arr{
+		testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/%s/",c))
+	}
 }
 func handler() http.Handler {
 	r:=mux.NewRouter()
@@ -89,26 +107,51 @@ func handler() http.Handler {
 	return s
 }
 func testStat(data []byte, expectStatus int, method string,url string) {
-	srv:=httptest.NewServer(handler())
+	srv := httptest.NewServer(handler())
 	defer srv.Close()
-	client:=http.Client{}
-	switch  {
+	client := &http.Client{}
+	switch {
 	case method == http.MethodGet:
-		_=httptest.NewRequest(http.MethodGet, fmt.Sprintf("%s%s", srv.URL, url), nil)
-	case method == http.MethodPost:
-		resp,err:=client.Post(fmt.Sprintf("%s%s", srv.URL, url),"application/json",bytes.NewBuffer(data))
+		resp,err := http.Get(fmt.Sprintf("%s%s",srv.URL,url))
 		if err!=nil{
 			log.Fatal(err)
 		}
 		if resp.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending post expected status %d,got %d",
+			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
 				expectStatus, resp.StatusCode)
 			return
-		}else{
-			fmt.Printf("Got status:",expectStatus)
+		} else {
+			fmt.Printf("Got status:%d\n", expectStatus)
+			return
+		}
+	case method == http.MethodPost:
+		resp, err := client.Post(fmt.Sprintf("%s%s", srv.URL, url), "application/json", bytes.NewBuffer(data))
+		if err != nil {
+			log.Fatal(err)
+		}
+		if resp.StatusCode != expectStatus {
+			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
+				expectStatus, resp.StatusCode)
+			return
+		} else {
+			fmt.Printf("Got status:%d\n", expectStatus)
+			return
 		}
 
-	case method==http.MethodPatch :
-		monkey.Patch()
+	case method == http.MethodPatch:
+		r := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("%s%s", srv.URL, url), bytes.NewBuffer(data))
+		r.Header.Set("Content-type", "application/json")
+		resp, err := client.Do(r)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if resp.StatusCode != expectStatus {
+			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
+				expectStatus, resp.StatusCode)
+			return
+		} else {
+			fmt.Printf("Got status:%d\n", expectStatus)
+			return
+		}
 	}
 }
