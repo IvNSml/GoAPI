@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bou.ke/monkey"
 	"bytes"
 	"encoding/json"
 	"final/_vendor-20190519220328/github.com/gorilla/mux"
@@ -92,9 +93,9 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 	defer srv.Close()
 	client:=http.Client{}
 	switch  {
-	case data == nil && method == http.MethodGet:
-		_=httptest.NewRequest(http.MethodGet, "http://localhost:8080/customers/", nil)
-	case data != nil && method == http.MethodPost:
+	case method == http.MethodGet:
+		_=httptest.NewRequest(http.MethodGet, fmt.Sprintf("%s%s", srv.URL, url), nil)
+	case method == http.MethodPost:
 		resp,err:=client.Post(fmt.Sprintf("%s%s", srv.URL, url),"application/json",bytes.NewBuffer(data))
 		if err!=nil{
 			log.Fatal(err)
@@ -103,8 +104,11 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 			fmt.Printf("ERROR: While sending post expected status %d,got %d",
 				expectStatus, resp.StatusCode)
 			return
+		}else{
+			fmt.Printf("Got status:",expectStatus)
 		}
-	case :
 
+	case method==http.MethodPatch :
+		monkey.Patch()
 	}
 }
