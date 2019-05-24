@@ -83,7 +83,7 @@ func TestRetrieveCustomer(t *testing.T)  {
 	}
 	defer rows.Close()
 	for _,c:=range arr{
-		testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/%s",c.ID))
+		testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/customers/%s",c.ID))
 	}
 }
 func handler() http.Handler {
