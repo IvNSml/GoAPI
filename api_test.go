@@ -49,18 +49,6 @@ func handler() http.Handler {
 	return s
 }
 
-func mkstr(size int) string {
-	str := make([]byte, size)
-	for i := range str {
-		rand.Seed(time.Now().UnixNano())
-		str[i] = letters[rand.Intn(len(letters))]
-	}
-	if size == 0 {
-		return mkstr(10)
-	}
-	return string(str)
-}
-
 func TestCreateCustomer(t *testing.T) {
 	var customers []crud.Customer
 	for i := 0; i < WILLBEEXEC; i++ {
@@ -97,7 +85,7 @@ func TestRetrieveCustomer(t *testing.T)  {
 	db:=crud.ConnectToDB()
 	defer db.Close()
 	var (c crud.Customer
-	arr []crud.Customer)
+		arr []crud.Customer)
 	rows,err:=db.Query("SELECT * FROM customers;")
 	if err!=nil{
 		log.Fatal(err)
@@ -118,12 +106,57 @@ func TestRetrieveCustomer(t *testing.T)  {
 		}
 	}
 }
+func TestUpdateCustomer(t *testing.T)  {
+	var customers []crud.Customer
+	for i := 0; i < WILLBEEXEC; i++ {
+		customers = append(customers, crud.Customer{
+			FirstName: mkstr(rand.Intn(20)),Phone: mkstr(rand.Intn(15))})
+		customers = append(customers, crud.Customer{
+			Email: mkstr(rand.Intn(20))})
+	}
+	customers = append(customers, crud.Customer{
+		FirstName: mkstr(rand.Intn(20)),
+		LastName: mkstr(rand.Intn(20))})
+	for _,c := range customers {
+		bytearr,err:=json.Marshal(&c)
+		if err!=nil{
+			fmt.Println(err)
+		}
+		err=testStat(bytearr,http.StatusOK,http.MethodPatch,"/customers/")
+		if err!=nil{
+			fmt.Println(err)
+		}
+		c:=WrongCust{FirstName:rand.Intn(100),LastName:-10,Email:rand.NormFloat64(),Phone:float32(rand.NormFloat64())}
+		//other req border
+		bytearr,err=json.Marshal(&c)
+		if err!=nil{
+			fmt.Println(err)
+		}
+		err=testStat(bytearr,http.StatusBadRequest,http.MethodPost,"/customers/")
+		if err!=nil{
+			fmt.Println(err)
+		}
+	}
+}
+
+func mkstr(size int) string {
+	str := make([]byte, size)
+	for i := range str {
+		rand.Seed(time.Now().UnixNano())
+		str[i] = letters[rand.Intn(len(letters))]
+	}
+	if size == 0 {
+		return mkstr(10)
+	}
+	return string(str)
+}
+
 func testStat(data []byte, expectStatus int, method string,url string) error{
 	srv := httptest.NewServer(handler())
 	defer srv.Close()
 	client := &http.Client{}
 	switch {
-	case method == http.MethodGet:
+	case method == http.MethodGet && url=="/customers/":
 		resp,err := http.Get(fmt.Sprintf("%s%s",srv.URL,url))
 		if err!=nil{
 			log.Fatal(err)
@@ -136,6 +169,7 @@ func testStat(data []byte, expectStatus int, method string,url string) error{
 			fmt.Printf("Got status:%d\n", expectStatus)
 			return nil
 		}
+
 	case method == http.MethodPost:
 		resp, err := client.Post(fmt.Sprintf("%s%s", srv.URL, url), "application/json", bytes.NewBuffer(data))
 		if err != nil {
@@ -151,7 +185,7 @@ func testStat(data []byte, expectStatus int, method string,url string) error{
 		}
 
 	case method == http.MethodPatch:
-		r := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("%s%s", srv.URL, url), bytes.NewBuffer(data))
+		r,err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%s%s", srv.URL, url), bytes.NewBuffer(data))
 		r.Header.Set("Content-type", "application/json")
 		resp, err := client.Do(r)
 		if err != nil {

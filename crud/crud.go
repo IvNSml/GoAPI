@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 )
 
 const (
@@ -28,6 +29,14 @@ type Account struct {
 	CustomerId string
 	Total      *float64 `json:"total"`
 	IsBlocked  bool     `json:"is_blocked"`
+}
+
+func GetID(r *http.Request) (string, error) {
+	if !strings.Contains(r.RequestURI,"/customers/"){
+		return "",fmt.Errorf("ERROR: get bad URL")
+	}
+	id:=r.RequestURI[len(r.RequestURI)-36:]
+	return id,nil
 }
 
 func ConnectToDB() (database *sql.DB) {
@@ -85,13 +94,17 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 	fmt.Println()
 	return
 }
-
 func RetrieveCustomer(w http.ResponseWriter, r *http.Request) { //we wont use regular expression because of uuid
 	db := ConnectToDB()
 	defer db.Close()
-	id := mux.Vars(r)["id"]
+	id,err:=GetID(r)
+	if err!=nil{
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintln(err)))
+		return
+	}
 	var c Customer
-	err := db.QueryRow("SELECT * FROM customers WHERE id = $1;", id).Scan(&c.ID,
+	err = db.QueryRow("SELECT * FROM customers WHERE id = $1;", id).Scan(&c.ID,
 		&c.FirstName, &c.LastName, &c.Email, &c.Phone)
 	switch {
 	case err == sql.ErrNoRows:

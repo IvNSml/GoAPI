@@ -48,18 +48,18 @@ func main() {
 	// function,but golang doesnt accepts overrides
 	subrouter := router.PathPrefix("/customers").Subrouter()
 	subrouter.HandleFunc("/", crud.CreateCustomer).Methods(http.MethodPost)
-	subrouter.HandleFunc("", crud.ListOfCustomers).Methods(http.MethodGet)
-	subrouter.HandleFunc("/{id}", crud.RetrieveCustomer).Methods(http.MethodGet)
+	subrouter.HandleFunc("", crud.ListOfCustomers).Methods(http.MethodPost)
+	subrouter.HandleFunc("/get_cust", crud.RetrieveCustomer).Methods(http.MethodGet)
 
-	subrouter.HandleFunc("/{id}", crud.ReplaceCustomer).Methods(http.MethodPut)
-	subrouter.HandleFunc("/{id}", crud.UpdateCustomer).Methods(http.MethodPatch)
-	subrouter.HandleFunc("/{id}", crud.DeleteCustomer).Methods(http.MethodDelete)
+	subrouter.HandleFunc("/replace_cust", crud.ReplaceCustomer).Methods(http.MethodPut)
+	subrouter.HandleFunc("/update_cust", crud.UpdateCustomer).Methods(http.MethodPatch)
+	subrouter.HandleFunc("/delete_Cust", crud.DeleteCustomer).Methods(http.MethodDelete)
 
-	subrouter.HandleFunc("/{id}/create_acc", accounts.CreateAccount).Methods(http.MethodPost)
-	subrouter.HandleFunc("/{account_id}/delete", accounts.DeleteAccount).Methods(http.MethodDelete)
-	subrouter.HandleFunc("/{account_id}/send", accounts.SendMoney).Methods(http.MethodPost)
-	subrouter.HandleFunc("/{account_id}/block", accounts.BlockAcc).Methods(http.MethodGet)
-	subrouter.HandleFunc("/{account_id}/total", accounts.GetMoney).Methods(http.MethodGet)
+	subrouter.HandleFunc("/create_acc", accounts.CreateAccount).Methods(http.MethodPost)
+	subrouter.HandleFunc("/delete_acc", accounts.DeleteAccount).Methods(http.MethodDelete)
+	subrouter.HandleFunc("/send", accounts.SendMoney).Methods(http.MethodPost)
+	subrouter.HandleFunc("/block", accounts.BlockAcc).Methods(http.MethodGet)
+	subrouter.HandleFunc("/total", accounts.GetMoney).Methods(http.MethodGet)
 
 	subrouter.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
 	http.Handle("/", router)
