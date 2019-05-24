@@ -3,10 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"final/_vendor-20190519220328/github.com/gorilla/mux"
 	"final/accounts"
 	"final/crud"
 	"fmt"
+	"github.com/gorilla/mux"
 	"log"
 	"math/rand"
 	"net/http"
@@ -75,7 +75,7 @@ func TestRetrieveCustomer(t *testing.T)  {
 		log.Fatal(err)
 	}
 	for rows.Next(){
-		rows.Scan(&c.ID,c.FirstName,)
+		rows.Scan(&c.ID,&c.FirstName,&c.LastName,&c.Phone,&c.Email)
 		arr=append(arr,c)
 	}
 	if err!=rows.Err(){
@@ -83,7 +83,7 @@ func TestRetrieveCustomer(t *testing.T)  {
 	}
 	defer rows.Close()
 	for _,c:=range arr{
-		testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/%s/",c))
+		testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/%s",c.ID))
 	}
 }
 func handler() http.Handler {
@@ -112,13 +112,15 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 	client := &http.Client{}
 	switch {
 	case method == http.MethodGet:
-		resp,err := http.Get(fmt.Sprintf("%s%s",srv.URL,url))
+		r,err := http.NewRequest(http.MethodGet,fmt.Sprintf("%s%s",srv.URL,url),nil)
+		r=mux.SetURLVars(r,map[string]string{"id":string(url[1:])})
+		res,err:=client.Do(r)
 		if err!=nil{
 			log.Fatal(err)
 		}
-		if resp.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
-				expectStatus, resp.StatusCode)
+		if res.StatusCode != expectStatus {
+			fmt.Printf("ERROR: While sending get expected status %d,got %d\n",
+				expectStatus, res.StatusCode)
 			return
 		} else {
 			fmt.Printf("Got status:%d\n", expectStatus)
