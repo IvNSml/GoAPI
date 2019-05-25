@@ -21,10 +21,32 @@ const WILLBEEXEC = 50
 
 type WrongCust struct {
 	ID        int
-	FirstName int `json:"first_name"`
-	LastName  int `json:"last_name"`
+	FirstName int     `json:"first_name"`
+	LastName  int     `json:"last_name"`
 	Email     float64 `json:"email"`
 	Phone     float32 `json:"phone"`
+}
+
+func handler() http.Handler {
+	r := mux.NewRouter()
+	s := r.PathPrefix("/customers").Subrouter()
+	s.HandleFunc("/", crud.CreateCustomer).Methods(http.MethodPost)
+	s.HandleFunc("", crud.ListOfCustomers).Methods(http.MethodGet)
+	//I don't know how to send a request
+	//properly; mux.Vars can't catch regexp {id}. So I found this article http://mrgossett.com/post/mux-vars-problem/
+	s.HandleFunc("/{id}", crud.RetrieveCustomer).Methods(http.MethodGet)
+	s.HandleFunc("/{id}", crud.ReplaceCustomer).Methods(http.MethodPut)
+	s.HandleFunc("/{id}", crud.UpdateCustomer).Methods(http.MethodPatch)
+	s.HandleFunc("/{id}", crud.DeleteCustomer).Methods(http.MethodDelete)
+
+	s.HandleFunc("/{id}/create_acc", accounts.CreateAccount).Methods(http.MethodPost)
+	s.HandleFunc("/{account_id}/delete", accounts.DeleteAccount).Methods(http.MethodDelete)
+	s.HandleFunc("/{account_id}/send", accounts.SendMoney).Methods(http.MethodPost)
+	s.HandleFunc("/{account_id}/block", accounts.BlockAcc).Methods(http.MethodGet)
+	s.HandleFunc("/{account_id}/total", accounts.GetMoney).Methods(http.MethodGet)
+
+	s.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
+	return s
 }
 
 func mkstr(size int) string {
@@ -50,81 +72,79 @@ func TestCreateCustomer(t *testing.T) {
 	customers = append(customers, crud.Customer{FirstName: mkstr(rand.Intn(20)),
 		LastName: mkstr(rand.Intn(20))})
 
-	for _,c := range customers {
-		bytearr,err:=json.Marshal(&c)
-		if err!=nil{
+	for _, c := range customers {
+		bytearr, err := json.Marshal(&c)
+		if err != nil {
 			fmt.Println(err)
 		}
-		testStat(bytearr,http.StatusCreated,http.MethodPost,"/customers/")
-		c:=WrongCust{FirstName:rand.Intn(100),LastName:-10,Email:rand.NormFloat64(),Phone:float32(rand.NormFloat64())}
+		err = testStat(bytearr, http.StatusCreated, http.MethodPost, "/customers/")
+		if err != nil {
+			fmt.Println(err)
+		}
+		c := WrongCust{FirstName: rand.Intn(100), LastName: -10, Email: rand.NormFloat64(), Phone: float32(rand.NormFloat64())}
 		//other req border
-		bytearr,err=json.Marshal(&c)
-		if err!=nil{
+		bytearr, err = json.Marshal(&c)
+		if err != nil {
 			fmt.Println(err)
 		}
-		testStat(bytearr,http.StatusBadRequest,http.MethodPost,"/customers/")
+		err = testStat(bytearr, http.StatusBadRequest, http.MethodPost, "/customers/")
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 }
-func TestRetrieveCustomer(t *testing.T)  {
-	db:=crud.ConnectToDB()
+func TestRetrieveCustomer(t *testing.T) {
+	db := crud.ConnectToDB()
 	defer db.Close()
-	var (c crud.Customer
-	arr []crud.Customer)
-	rows,err:=db.Query("SELECT * FROM customers;")
-	if err!=nil{
+	var (
+		c   crud.Customer
+		arr []crud.Customer
+	)
+	rows, err := db.Query("SELECT * FROM customers;")
+	if err != nil {
 		log.Fatal(err)
 	}
-	for rows.Next(){
-		rows.Scan(&c.ID,&c.FirstName,&c.LastName,&c.Phone,&c.Email)
-		arr=append(arr,c)
+	for rows.Next() {
+
+		rows.Scan(&c.ID, &c.FirstName, &c.LastName, &c.Phone, &c.Email)
+
+		rows.Scan(&c.ID,
+			&c.FirstName, &c.LastName, &c.Email, &c.Phone)
+
+		arr = append(arr, c)
 	}
-	if err!=rows.Err(){
+	if err != rows.Err() {
 		log.Fatal(err)
 	}
 	defer rows.Close()
-	for _,c:=range arr{
-		testStat(nil, http.StatusOK, http.MethodGet,fmt.Sprintf("/customers/%s",c.ID))
+	for _, c := range arr {
+		err = testStat(nil, http.StatusOK, http.MethodGet, fmt.Sprintf("/customers/%s", c.ID))
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 }
-func handler() http.Handler {
-	r:=mux.NewRouter()
-	s := r.PathPrefix("/customers").Subrouter()
-	s.HandleFunc("/", crud.CreateCustomer).Methods(http.MethodPost)
-	s.HandleFunc("", crud.ListOfCustomers).Methods(http.MethodGet)
-	s.HandleFunc("/{id}", crud.RetrieveCustomer).Methods(http.MethodGet)
-
-	s.HandleFunc("/{id}", crud.ReplaceCustomer).Methods(http.MethodPut)
-	s.HandleFunc("/{id}", crud.UpdateCustomer).Methods(http.MethodPatch)
-	s.HandleFunc("/{id}", crud.DeleteCustomer).Methods(http.MethodDelete)
-
-	s.HandleFunc("/{id}/create_acc", accounts.CreateAccount).Methods(http.MethodPost)
-	s.HandleFunc("/{account_id}/delete", accounts.DeleteAccount).Methods(http.MethodDelete)
-	s.HandleFunc("/{account_id}/send", accounts.SendMoney).Methods(http.MethodPost)
-	s.HandleFunc("/{account_id}/block", accounts.BlockAcc).Methods(http.MethodGet)
-	s.HandleFunc("/{account_id}/total", accounts.GetMoney).Methods(http.MethodGet)
-
-	s.HandleFunc("/get_by_timestamp", accounts.GetByDate).Methods(http.MethodPost)
-	return s
-}
-func testStat(data []byte, expectStatus int, method string,url string) {
+func testStat(data []byte, expectStatus int, method string, url string) error {
 	srv := httptest.NewServer(handler())
 	defer srv.Close()
 	client := &http.Client{}
 	switch {
 	case method == http.MethodGet:
-		r,err := http.NewRequest(http.MethodGet,fmt.Sprintf("%s%s",srv.URL,url),nil)
-		r=mux.SetURLVars(r,map[string]string{"id":string(url[1:])})
-		res,err:=client.Do(r)
-		if err!=nil{
+		r, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s%s", srv.URL, url), nil)
+		r = mux.SetURLVars(r, map[string]string{"id": string(url[1:])})
+		res, err := client.Do(r)
+		if err != nil {
 			log.Fatal(err)
 		}
+
 		if res.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending get expected status %d,got %d\n",
+			err = fmt.Errorf("ERROR: While sending get expected status %d,got %d\n",
 				expectStatus, res.StatusCode)
-			return
+			return err
+
 		} else {
 			fmt.Printf("Got status:%d\n", expectStatus)
-			return
+			return nil
 		}
 	case method == http.MethodPost:
 		resp, err := client.Post(fmt.Sprintf("%s%s", srv.URL, url), "application/json", bytes.NewBuffer(data))
@@ -132,12 +152,12 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 			log.Fatal(err)
 		}
 		if resp.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
+			err = fmt.Errorf("ERROR: While sending post expected status %d,got %d\n",
 				expectStatus, resp.StatusCode)
-			return
+			return err
 		} else {
 			fmt.Printf("Got status:%d\n", expectStatus)
-			return
+			return nil
 		}
 
 	case method == http.MethodPatch:
@@ -148,12 +168,13 @@ func testStat(data []byte, expectStatus int, method string,url string) {
 			fmt.Println(err)
 		}
 		if resp.StatusCode != expectStatus {
-			fmt.Printf("ERROR: While sending post expected status %d,got %d\n",
+			err = fmt.Errorf("ERROR: While sending post expected status %d,got %d\n",
 				expectStatus, resp.StatusCode)
-			return
+			return err
 		} else {
 			fmt.Printf("Got status:%d\n", expectStatus)
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("Error!")
 }
