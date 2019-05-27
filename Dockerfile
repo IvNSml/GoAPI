@@ -1,13 +1,13 @@
 FROM golang:alpine
 
-WORKDIR $GOPATH/src/final
+WORKDIR /api_docker
 
-COPY . .
+COPY . api_docker
 
+RUN apk add git
 RUN go get -d -v ./...
 
-RUN go-wrapper install
-
-CMD ["go","run","my_final.go"]
+CMD ["go","run","api.go"]
 
 EXPOSE 8080
+EXPOSE 5432
