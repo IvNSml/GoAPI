@@ -3,13 +3,14 @@ package accounts
 import (
 	"database/sql"
 	"encoding/json"
-	"final/crud"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/gorilla/mux"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/IvNSml/GoAPI/crud"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 type SendMoneyForm struct {

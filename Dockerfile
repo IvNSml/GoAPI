@@ -1,12 +1,10 @@
 FROM golang:alpine
 
-WORKDIR /api_docker
-
-COPY . api_docker
+COPY . .
+WORKDIR $GOPATH/src/github.com/IvNSml/GoAPI
 
 RUN apk add git
-RUN go get -d -v ./...
-
+RUN go get -d ./...
 CMD ["go","run","api.go"]
 
 EXPOSE 8080

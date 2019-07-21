@@ -1,12 +1,13 @@
 package main
 
 import (
-	"final/accounts"
-	"final/crud"
-	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
 	"log"
 	"net/http"
+
+	"github.com/IvNSml/GoAPI/accounts"
+	"github.com/IvNSml/GoAPI/crud"
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
 func main() {
