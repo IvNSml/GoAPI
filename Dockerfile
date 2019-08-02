@@ -1,11 +1,12 @@
 FROM golang:alpine
 
-COPY . .
-WORKDIR $GOPATH/src/github.com/IvNSml/GoAPI
+WORKDIR /app
+COPY . /app
 
 RUN apk add git
 RUN go get -d ./...
-CMD ["go","run","api.go"]
+RUN  GO111MODULE=on CGO_ENABLED=0 go build -o api
+
+CMD ["./api"]
 
 EXPOSE 8080
-EXPOSE 5432

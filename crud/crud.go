@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	CONNSTR   = "postgres://postgres:1234@localhost:5432"
+	CONNSTR   = "postgres://postgres:1234@localhost:5432?sslmode=disable"
 	DB_DRIVER = "postgres"
 )
 
