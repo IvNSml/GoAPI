@@ -1,0 +1,10 @@
+runtime: go
+env: flex
+service: tgAPI
+network:
+  name:
+    -kolobikenet
+  session_affinity: true
+  forwarded_ports:
+    - 5432:5432
+    - 8080:8080
