@@ -8,4 +8,3 @@ network:
   forwarded_ports:
     - 5432:5432
     - 8080:8080
-  s
