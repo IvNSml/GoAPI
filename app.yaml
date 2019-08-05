@@ -1,6 +1,6 @@
 runtime: go
 env: flex
-service: tgAPI
+service: tgapi
 network:
   name:
     -kolobikenet
