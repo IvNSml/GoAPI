@@ -1,4 +1,4 @@
-runtime: custom
+runtime: go112
 env: flex
 service: tgapi
 network:
@@ -8,3 +8,4 @@ network:
   forwarded_ports:
     - 5432:5432
     - 8080:8080
+  s
