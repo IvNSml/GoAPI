@@ -9,8 +9,6 @@ git:
 install: true
 notifications:
   email: true
-before_script:
-  - go install github.com/golangci/golangci-lint/cmd/golangci-lint
 script:
-  - golangci-lint run
-  - go test -v race ./...
+  - go imports
+  - go vet

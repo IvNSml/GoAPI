@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/gorilla/mux"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 const (
@@ -31,8 +32,8 @@ type Account struct {
 }
 
 func ConnectToDB() (database *sql.DB) {
-	database, err := sql.Open(DB_DRIVER, CONNSTR)
-	if err = database.Ping(); err != nil {
+	database, _ = sql.Open(DB_DRIVER, CONNSTR)
+	if err := database.Ping(); err != nil {
 		log.Fatal(err)
 		return
 	}
@@ -51,12 +52,18 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(byrearr, &c)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf("Invalid data:%v", err)))
+		_, err:= w.Write([]byte(fmt.Sprintf("Invalid data:%v", err)))
+		if err!=nil{
+			fmt.Println(err)
+		}
 		return
 	}
 	if c.FirstName == "" || c.LastName == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("First name and last name are required"))
+		_, err:= w.Write([]byte("First name and last name are required"))
+		if err!=nil{
+			fmt.Println(err)
+		}
 		return
 	}
 	c.ID = uuid.New().String()
@@ -67,7 +74,10 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid data"))
+		_, err:= w.Write([]byte("Invalid data"))
+		if err!=nil{
+			fmt.Println(err)
+		}
 		return
 	}
 	ra, _ := rows.RowsAffected()
@@ -75,12 +85,9 @@ func CreateCustomer(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte(c.ID))
+	_, err = w.Write([]byte(c.ID))
+	fmt.Println(err)
 	fmt.Printf("CREATED USER with id %s", c.ID)
 	fmt.Println()
 	return
@@ -140,7 +147,7 @@ func ListOfCustomers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bytearr, err := json.MarshalIndent(&customers, "", " ")
+	bytearr, _ := json.MarshalIndent(&customers, "", " ")
 	w.Write(bytearr)
 }
 
@@ -179,10 +186,6 @@ func UpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Inсorrect json data"))
-		fmt.Println(err)
-		return
-	}
-	if err != nil {
 		fmt.Println(err)
 		return
 	}

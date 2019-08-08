@@ -32,31 +32,43 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	account.CustomerId = mux.Vars(r)["id"]
 	account.AccountId = uuid.New().String()
 	account.Total = nil //evaluate with nil
-	bytearr, err := ioutil.ReadAll(r.Body)
-	if err = json.Unmarshal(bytearr, &account); err != nil {
+	bytearr, _ := ioutil.ReadAll(r.Body)
+	if err := json.Unmarshal(bytearr, &account); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid data"))
+		_, err = w.Write([]byte("Invalid data"))
+		if err != nil {
+			return
+		}
 		fmt.Println(err)
 		return
 	}
 	if account.Total == nil || *account.Total < 0 { //check if Total(required field) is still nil
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid data"))
+		_, err := w.Write([]byte("Invalid data"))
+		if err != nil {
+			return
+		}
 		return
 	}
-	_, err = db.Exec("INSERT INTO accounts"+
+	_, err := db.Exec("INSERT INTO accounts"+
 		"(total,customer_id,account_id)"+
 		"VALUES ("+
 		"$1,$2,$3);", account.Total, account.CustomerId, account.AccountId) //there is a foreign key,so it
 	// doesn't have a sense to check if exist explicitly
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Wrong customer"))
+		_, err = w.Write([]byte("Wrong customer"))
+		if err != nil {
+			return
+		}
 		fmt.Println(err)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte(account.AccountId))
+	_, err = w.Write([]byte(account.AccountId))
+	if err != nil {
+		return
+	}
 	fmt.Printf("CREATED ACCOUNT WITH ID %s TO USER WITH ID %s", account.AccountId, account.CustomerId)
 	fmt.Println()
 	return
@@ -94,7 +106,7 @@ func CheckBlocked(acc_id string) (bool, error) { //Check if blocked and check if
 }
 func SendMoney(w http.ResponseWriter, r *http.Request) {
 	db := crud.ConnectToDB()
-	defer db.Close()
+	defer fmt.Println(db.Close())
 	var sendForm SendMoneyForm
 	bytearr, err := ioutil.ReadAll(r.Body)
 	if err = json.Unmarshal(bytearr, &sendForm); err != nil {
@@ -136,7 +148,10 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Exec(fmt.Sprintf("UPDATE accounts SET total=total-%f WHERE account_id=$1;", sendForm.Amount),
 		sendForm.SendersAccNumber)
 	if err != nil {
-		tx.Rollback()
+		if tx.Rollback() != nil {
+			fmt.Println(err)
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, "Invalid data:", err)
 		return
@@ -144,7 +159,10 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 	rows, err = db.Exec(fmt.Sprintf("UPDATE accounts SET total=total+%f WHERE account_id=$1;", sendForm.Amount),
 		sendForm.ReceiversAccNumber)
 	if err != nil {
-		tx.Rollback()
+		if tx.Rollback() != nil {
+			fmt.Println(err)
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, "Invalid data:", err)
 		return
@@ -157,14 +175,20 @@ func SendMoney(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, "Transaction denied:", err)
-		tx.Rollback()
-		return
+		if tx.Rollback() != nil {
+			fmt.Println(err)
+			return
+			return
+		}
+		if tx.Commit()!=nil {
+			fmt.Println(err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Transaction approved;"))
+		SendNotification(sendForm.ReceiversAccNumber, sendForm.SendersAccNumber, sendForm.Amount)
+		fmt.Println()
 	}
-	tx.Commit()
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Transaction approved;"))
-	SendNotification(sendForm.ReceiversAccNumber, sendForm.SendersAccNumber, sendForm.Amount)
-	fmt.Println()
 }
 
 func BlockAcc(w http.ResponseWriter, r *http.Request) {
@@ -258,10 +282,10 @@ func SendNotification(recievers_acc string, senders_acc string, amount float64) 
 }
 func GetByDate(w http.ResponseWriter, r *http.Request) {
 	db := crud.ConnectToDB()
-	defer db.Close()
+	defer fmt.Println(db.Close())
 	data := GetDate{}
-	bytearr, err := ioutil.ReadAll(r.Body)
-	if err = json.Unmarshal(bytearr, &data); err != nil {
+	bytearr, _ := ioutil.ReadAll(r.Body)
+	if err := json.Unmarshal(bytearr, &data); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid data"))
 		fmt.Println(err)
