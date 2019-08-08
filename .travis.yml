@@ -12,5 +12,5 @@ notifications:
 before_script:
   - go get golang.org/x/tools/cmd/goimports
 script:
-  - goimports
+  - goimports .
   - go vet
