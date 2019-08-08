@@ -9,6 +9,8 @@ git:
 install: true
 notifications:
   email: true
+before_script:
+  - go get golang.org/x/tools/cmd/goimports
 script:
   - go imports
   - go vet
